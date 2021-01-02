@@ -1,0 +1,69 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+env:
+  EXTENSION_FILE_NAME: MyAddon 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Clean up addon directory
+      shell: pwsh
+      run: |
+        Remove-Item -Path "${{ github.workspace }}/.git" -Recurse -Force -Verbose
+        Remove-Item -Path "${{ github.workspace }}/.github" -Recurse -Force -Verbose
+
+    - name: Set version
+      shell: pwsh
+      run: |
+        $infoFile = '${{ github.workspace }}/info.json'
+        $fileContent = Get-Content $infoFile | ConvertFrom-Json
+        $fileVersion = [Management.Automation.SemanticVersion]::Parse($fileContent.version)
+        $version = [Management.Automation.SemanticVersion]::new($fileVersion.Major, $fileVersion.Minor, $env:GITHUB_RUN_NUMBER)
+        
+        Write-Output "Setting version to $version"
+        "VERSION=$($version.ToString())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        $fileContent.version = $version.ToString()
+        $fileContent | ConvertTo-Json -Depth 99 | Set-Content $infoFile
+        Get-Content $infoFile
+    
+    - name: Zip Files
+      run: cd '${{ github.workspace }}' && zip -r ${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip .
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: addon
+        path: ${{ github.workspace }}/${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip
+        
+    - name: Create Release
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+      with:
+        tag_name: ${{ env.VERSION }} 
+        release_name: ${{ env.VERSION }} 
+        draft: true
+        prerelease: false
+        
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip
+        asset_name: ${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip
+        asset_content_type: application/zip
