@@ -1,27 +1,37 @@
 name: Create Release
 
 on:
+  # Allows the pipeline to be triggered on demand
   workflow_dispatch:
+  # Start a new build whenever something is pushed to branch master
   push:
     branches:
       - master
 
 env:
+  # Configures the name of the finished mmip file
   EXTENSION_FILE_NAME: MyAddon 
 
 jobs:
   build:
+    # Run this build on a github hosted ubuntu agent
     runs-on: ubuntu-latest
     
     steps:
+    # Checks out the repository into ${{ github.workspace }} 
     - uses: actions/checkout@v2
-
+        
+    # Remove everything we don't want to include in the final addon
     - name: Clean up addon directory
       shell: pwsh
       run: |
         Remove-Item -Path "${{ github.workspace }}/.git" -Recurse -Force -Verbose
         Remove-Item -Path "${{ github.workspace }}/.github" -Recurse -Force -Verbose
-
+        
+    # Reads the version property from the addon's info.json and sets its patch version
+    # to the run number of the current build and updates the file with the new version number.
+    # This ensures that each released has a unique version number, preventing accidental collisions
+    # with already released versions.
     - name: Set version
       shell: pwsh
       run: |
@@ -36,16 +46,19 @@ jobs:
         $fileContent.version = $version.ToString()
         $fileContent | ConvertTo-Json -Depth 99 | Set-Content $infoFile
         Get-Content $infoFile
-    
+        
+    # Zip all files into an mmip file
     - name: Zip Files
       run: cd '${{ github.workspace }}' && zip -r ${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip .
-    
+        
+    # Attach the mmip as artifact to the current build
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
         name: addon
         path: ${{ github.workspace }}/${{ env.EXTENSION_FILE_NAME }}${{ env.VERSION }}.mmip
         
+    # Create a new draft release
     - name: Create Release
       uses: actions/create-release@v1
       id: create_release
@@ -57,6 +70,7 @@ jobs:
         draft: true
         prerelease: false
         
+    # Attach the mmip to the release
     - name: Upload Release Asset
       id: upload-release-asset 
       uses: actions/upload-release-asset@v1
